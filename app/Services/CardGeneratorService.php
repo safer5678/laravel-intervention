@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Models\CardOrder;
 use Intervention\Image\Laravel\Facades\Image;
 use Barryvdh\DomPDF\Facade\Pdf;
-use Illuminate\Support\Facades\Storage;
 
 class CardGeneratorService
 {
@@ -18,15 +17,12 @@ class CardGeneratorService
         $width = (int)($cardOrder->width_mm * $dpi / 25.4);
         $height = (int)($cardOrder->height_mm * $dpi / 25.4);
 
-        // ✅ v3 canvas method
         $canvas = Image::create($width, $height)->fill($cardOrder->background_color);
 
         if ($cardOrder->background_image) {
             $bgPath = public_path($cardOrder->background_image);
             if (file_exists($bgPath)) {
-                $bgImage = Image::read($bgPath)->resize($width, $height);
-                // ✅ v3 insert → place
-                $canvas->place($bgImage, 'top-left', 0, 0);
+                $canvas->place(Image::read($bgPath)->resize($width, $height), 'top-left', 0, 0);
             }
         }
 
@@ -37,9 +33,7 @@ class CardGeneratorService
         $filename = 'preview_' . $cardOrder->order_number . '.png';
         $savePath = storage_path('app/public/previews/' . $filename);
 
-        if (!file_exists(dirname($savePath))) {
-            mkdir(dirname($savePath), 0755, true);
-        }
+        if (!file_exists(dirname($savePath))) mkdir(dirname($savePath), 0755, true);
 
         $canvas->save($savePath, quality: 80);
 
@@ -61,8 +55,7 @@ class CardGeneratorService
         if ($cardOrder->background_image) {
             $bgPath = public_path($cardOrder->background_image);
             if (file_exists($bgPath)) {
-                $bgImage = Image::read($bgPath)->resize($width, $height);
-                $canvas->place($bgImage, 'top-left', 0, 0);
+                $canvas->place(Image::read($bgPath)->resize($width, $height), 'top-left', 0, 0);
             }
         }
 
@@ -70,19 +63,16 @@ class CardGeneratorService
             $this->addElementToCanvas($canvas, $element, $dpi);
         }
 
-        $filename = 'print_' . $cardOrder->order_number . '.jpg';
-        $savePath = storage_path('app/public/print_files/' . $filename);
+        $jpegPath = storage_path('app/public/print_files/print_' . $cardOrder->order_number . '.jpg');
 
-        if (!file_exists(dirname($savePath))) {
-            mkdir(dirname($savePath), 0755, true);
-        }
+        if (!file_exists(dirname($jpegPath))) mkdir(dirname($jpegPath), 0755, true);
 
-        $canvas->save($savePath, quality: 100);
+        $canvas->save($jpegPath, quality: 100);
 
-        $pdfFilename = 'print_' . $cardOrder->order_number . '.pdf';
-        $this->convertImageToPdf($savePath, storage_path('app/public/print_files/' . $pdfFilename));
+        $pdfPath = storage_path('app/public/print_files/print_' . $cardOrder->order_number . '.pdf');
+        $this->convertImageToPdf($jpegPath, $pdfPath);
 
-        return '/storage/print_files/' . $pdfFilename;
+        return '/storage/print_files/print_' . $cardOrder->order_number . '.pdf';
     }
 
 
@@ -91,14 +81,12 @@ class CardGeneratorService
      */
     protected function addElementToCanvas($canvas, $element, $dpi)
     {
-        $scale = $dpi / 25.4;
+        $scale = $dpi / 25.4; // mm → px conversion
 
         if ($element['type'] === 'text') {
-            $this->addTextElement($canvas, $element, $scale);
+            $this->addTextElement($canvas, $element, $scale, $dpi);
         } elseif ($element['type'] === 'image') {
             $this->addImageElement($canvas, $element, $scale);
-        } elseif ($element['type'] === 'shape') {
-            $this->addShapeElement($canvas, $element, $scale);
         }
     }
 
@@ -106,18 +94,27 @@ class CardGeneratorService
     /**
      * Text element
      */
-    protected function addTextElement($canvas, $element, $scale)
+    protected function addTextElement($canvas, $element, $scale, $dpi)
     {
-        $x = $element['x'] * $scale;
-        $y = $element['y'] * $scale;
-      $fontSize = (int)$element['font_size'];
+        $frontendFontSize = $element['font_size'];
+        $fontSize = (int)($frontendFontSize * ($dpi / 96)); // scale correctly
+
+        $x = (int)($element['x'] * $scale);
+        $y = (int)($element['y'] * $scale);
 
         $fontPath = $this->getFontPath($element['font_family'] ?? 'Arial');
 
-        $canvas->text($element['text'], $x, $y, function ($font) use ($fontSize, $fontPath, $element) {
+        $canvas->text($element['text'], $x, $y, function ($font) use ($fontPath, $fontSize, $element) {
             if (file_exists($fontPath)) $font->file($fontPath);
+
             $font->size($fontSize);
             $font->color($element['color'] ?? '#000');
+            $font->align($element['align'] ?? 'left');
+            $font->valign('center');
+
+            if (!empty($element['rotation'])) {
+                $font->angle(-$element['rotation']);
+            }
         });
     }
 
@@ -132,36 +129,27 @@ class CardGeneratorService
 
         $img = Image::read($imagePath);
 
-        if (isset($element['width']) && isset($element['height'])) {
-            $img->resize($element['width'] * $scale, $element['height'] * $scale);
+        if (isset($element['width'], $element['height'])) {
+            $img->resize(
+                (int)($element['width'] * $scale),
+                (int)($element['height'] * $scale)
+            );
         }
 
-        if (isset($element['rotation'])) {
+        if (!empty($element['rotation'])) {
             $img->rotate(-$element['rotation']);
         }
 
-        $canvas->place($img, 'top-left', $element['x'] * $scale, $element['y'] * $scale);
-    }
-
-
-    /**
-     * Shape element
-     */
-    protected function addShapeElement($canvas, $element, $scale)
-    {
-        // (keep same logic)
+        $canvas->insert($img, 'top-left', (int)($element['x'] * $scale), (int)($element['y'] * $scale));
     }
 
 
     protected function getFontPath($fontFamily)
     {
-        return public_path("fonts/" . $fontFamily . ".ttf");
+        return public_path("fonts/{$fontFamily}.ttf");
     }
 
 
-    /**
-     * Convert to PDF
-     */
     protected function convertImageToPdf($imagePath, $pdfPath)
     {
         $pdf = Pdf::loadView('pdf.card', ['imagePath' => $imagePath]);
