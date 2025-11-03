@@ -26,15 +26,26 @@ class CardGeneratorController extends Controller
     public function generate(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'card_name' => 'nullable|string|max:255',
-            'width_mm' => 'nullable|integer|min:100|max:500',
-            'height_mm' => 'nullable|integer|min:100|max:500',
-            'background_color' => 'nullable|string',
-            'background_image' => 'nullable|string',
-            'elements' => 'required|array',
-            'elements.*.type' => 'required|in:text,image,shape',
-            'generate_pdf' => 'nullable|boolean',
-        ]);
+    'card_name' => 'nullable|string|max:255',
+    'width_mm' => 'nullable|integer|min:100|max:500',
+    'height_mm' => 'nullable|integer|min:100|max:500',
+    'background_color' => 'nullable|string',
+    'background_image' => 'nullable|string',
+
+    // ✅ Now allow the new structure
+    'front_elements' => 'required|array',
+    'inside_left_elements' => 'required|array',
+    'inside_right_elements' => 'required|array',
+    'back_elements' => 'required|array',
+
+    'front_elements.*.type' => 'required|in:text,image',
+    'inside_left_elements.*.type' => 'required|in:text,image',
+    'inside_right_elements.*.type' => 'required|in:text,image',
+    'back_elements.*.type' => 'required|in:text,image',
+
+    'generate_pdf' => 'nullable|boolean',
+]);
+
 
         if ($validator->fails()) {
             return response()->json([
@@ -52,10 +63,14 @@ class CardGeneratorController extends Controller
                 'height_mm' => $request->height_mm ?? 210,
                 'background_color' => $request->background_color ?? '#FFFFFF',
                 'background_image' => $request->background_image,
-                'card_data' => [
-                    'elements' => $request->elements,
-                    'metadata' => $request->metadata ?? [],
-                ],
+               'card_data' => [
+    'front_elements' => $request->front_elements,
+    'inside_left_elements' => $request->inside_left_elements,
+    'inside_right_elements' => $request->inside_right_elements,
+    'back_elements' => $request->back_elements,
+    'metadata' => $request->metadata ?? [],
+],
+
                 'status' => 'draft',
             ]);
 
