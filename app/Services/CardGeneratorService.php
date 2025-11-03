@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\CardOrder;
 use Intervention\Image\Laravel\Facades\Image;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Dompdf\Css\Color;
 
 class CardGeneratorService
 {
@@ -29,6 +30,7 @@ class CardGeneratorService
         foreach ($cardOrder->card_data['elements'] as $element) {
             $this->addElementToCanvas($canvas, $element, $dpi);
         }
+      
 
         $filename = 'preview_' . $cardOrder->order_number . '.png';
         $savePath = storage_path('app/public/previews/' . $filename);
